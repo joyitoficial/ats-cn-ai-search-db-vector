@@ -1,0 +1,23 @@
+  version: '3.9'
+  services:
+    app:
+      build: 
+        context: .  # Carpeta actual (donde está el Dockerfile)
+        dockerfile: Dockerfile  # Nombre del Dockerfile
+      volumes:
+        - ./infrastructure:/app/infrastructure
+      ports:
+        - "5001:5001"
+      environment:
+        - PYTHONPATH=/app
+        - PGSQL_HOST=localhost
+        - PGSQL_USER=postgres
+        - PGSQL_PASSWORD=contraseña
+        - PGSQL_DATABASE=postgres
+        - PGSQL_PORT=5432
+      command: python application/app.py
+      networks:
+        - my_network
+  networks:
+    my_network:
+      external: true
