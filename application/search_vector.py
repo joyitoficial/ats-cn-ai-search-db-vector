@@ -32,7 +32,27 @@ SELECT DISTINCT ON (app_prof.id)
     job.name AS job_name,
     level_of_exp.name AS level_of_experience,
     prof_type.description AS profiletype,
-    workexp.description as aditional_info
+    workexp.description AS aditional_info,
+    ts_rank(
+        to_tsvector('spanish', 
+            COALESCE(u.name, '') || ' ' ||
+            COALESCE(job.name, '') || ' ' ||
+            COALESCE(job.workmode, '') || ' ' ||
+            COALESCE(skills.description, '') || ' ' ||
+            COALESCE(workexp.description, '') || ' ' ||
+            COALESCE(level_of_exp.name, '')
+        ), 
+        to_tsquery('spanish', %s)
+    ) * 100 AS score_capabilities,
+    
+    ts_rank(
+        to_tsvector('spanish', 
+            COALESCE(prof_type.description, '') || ' ' ||
+            COALESCE(level_of_exp.name, '')
+        ), 
+        to_tsquery('spanish', %s)
+    ) * 100 AS score_role
+
 FROM 
     recruitment.applicantprofile_skill AS app_skill
     LEFT JOIN recruitment.applicant_profile AS app_prof 
@@ -50,7 +70,7 @@ FROM
     LEFT JOIN recruitment.profiletype AS prof_type
         ON prof_type.id = job.profile_type_id
     LEFT JOIN recruitment.workexperience as workexp
-	on workexp.applicantprofile_id = app_prof.id
+        ON workexp.applicantprofile_id = app_prof.id
 WHERE 
     to_tsvector(
         'spanish', 
@@ -62,15 +82,15 @@ WHERE
         COALESCE(level_of_exp.name, '')
     ) @@ to_tsquery('spanish', %s)
      AND
-    to_tsvector(
-        'spanish',
-        COALESCE(level_of_exp.name, '') || ' ' ||
-        COALESCE(prof_type.description, '')
+    to_tsvector('spanish',
+        COALESCE(prof_type.description, '') || ' ' ||
+        COALESCE(level_of_exp.name, '') 
     ) @@ to_tsquery('spanish', %s)
 GROUP BY
-    u.name, job.name, level_of_exp.name, prof_type.description, app_prof.id, workexp.description
+    u.name, job.name, level_of_exp.name, prof_type.description, app_prof.id, workexp.description, 
+    job.workmode, skills.description
 ORDER BY 
-    app_prof.id
+    app_prof.id, score_capabilities DESC, score_role DESC;
 ;
 
     """
@@ -79,8 +99,10 @@ ORDER BY
         conn = get_db_connection()  # Obtén la conexión a la base de datos
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             # Ejecutar la consulta con el término de búsqueda seguro
-            cur.execute(consulta, (busqueda_capabilities,busqueda_rol))
+            cur.execute(consulta, (busqueda_capabilities,busqueda_rol,
+                                   busqueda_capabilities,busqueda_rol))
             resultados = cur.fetchall()
+
         conn.close()
     except Exception as e:
         print(f"Error al consultar PostgreSQL: {e}")
