@@ -15,11 +15,8 @@ def search_entities():
     role = data["entities"]["role"]
     capabilities = data["entities"]["capabilities"]
 
-    # Concatenar el rol y las capacidades para formar la búsqueda
-    busqueda = role + " " + " ".join(capabilities)
-
     # Llamar a la función de búsqueda con el término combinado
-    aplicantes_filtrados = buscar_candidatos_postgre(busqueda)
+    aplicantes_filtrados = buscar_candidatos_postgre(role, capabilities)
 
     return jsonify(aplicantes_filtrados)
 
