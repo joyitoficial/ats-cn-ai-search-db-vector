@@ -6,22 +6,13 @@ from psycopg2.extras import RealDictCursor
 def buscar_candidatos_postgre(rol, capabilities):
     # Formatear la búsqueda para usar en to_tsquery
     
-    busqueda_capabilities = ' | '.join(
-            [f"'{capability.strip()}'" if ' ' in capability else capability.strip() for capability in capabilities]
-        )
-
-    if busqueda_capabilities.startswith(" | "):
-        busqueda_capabilities = busqueda_capabilities[3:]
-    if busqueda_capabilities.endswith(" | "):
-        busqueda_capabilities = busqueda_capabilities[:-3]
-        
     if isinstance(rol, str):
         busqueda_rol = rol.strip()  # Eliminar espacios innecesarios
         busqueda_rol = ' & '.join(busqueda_rol.split())  # Reemplazar espacios por " & " para to_tsquery
     else:
         raise ValueError("El parámetro 'rol' debe ser una cadena.")
 
-    print(busqueda_capabilities, busqueda_rol)
+    print(capabilities, busqueda_rol)
 
     # INDICES
     #     -- Índices para las columnas involucradas en JOINs
@@ -43,63 +34,54 @@ def buscar_candidatos_postgre(rol, capabilities):
 
     
     consulta = """
-    SET enable_nestloop = off; 
     
-    WITH ranked_profiles AS (
-    SELECT 
-        app_prof.id AS applicant_profile_id,
-        u.name AS name,
-        skills.description AS skill_description,
-        job.name AS job_name,
-        level_of_exp.name AS level_of_experience,
-        prof_type.description AS profiletype,
-        workexp.description AS aditional_info
-    FROM 
-        recruitment.applicantprofile_skill AS app_skill
-    INNER JOIN recruitment.applicant_profile AS app_prof ON app_skill.applicant_profile_id = app_prof.id
-    INNER JOIN recruitment.skills AS skills ON skills.id = app_skill.skill_id
-    INNER JOIN recruitment.user AS u ON u.user_id = app_prof.user_id
-    INNER JOIN recruitment.application AS application ON application.user_id = u.user_id
-    INNER JOIN recruitment.job AS job ON job.id = application.job_id
-    INNER JOIN recruitment.levelofexp AS level_of_exp ON level_of_exp.id = job.levelofexperience_id
-    INNER JOIN recruitment.profiletype AS prof_type ON prof_type.id = job.profile_type_id
-    INNER JOIN recruitment.workexperience as workexp ON workexp.applicantprofile_id = app_prof.id
-    WHERE 
-        -- Usar tsquery para el filtrado en lugar de recalcular el tsvector cada vez
-        to_tsvector('spanish', job.name || ' ' || skills.description || ' ' || workexp.description || ' ' || level_of_exp.name)
-        @@ to_tsquery('spanish', %s)
-        AND
-        to_tsvector('spanish', prof_type.description || ' ' || level_of_exp.name) 
-        @@ to_tsquery('spanish', %s)
+    WITH filtered_skills AS (
+    SELECT id, description
+    FROM recruitment.skills
+    WHERE description IN %s
 ),
-ranked_with_row_number AS (
-    SELECT 
-    applicant_profile_id,
-    MIN(name) AS name,
-    MIN(skill_description) AS skill_description,
-    MIN(job_name) AS job_name,
-    MIN(level_of_experience) AS level_of_experience,
-    MIN(profiletype) AS profiletype,
-    MIN(aditional_info) AS aditional_info
-    FROM ranked_profiles
-    GROUP BY applicant_profile_id
+filtered_job_profile AS (
+    SELECT jobs.id AS job_id, jobs.name AS job_name, level_of_exp.name AS level_name, jobs.profile_type_id AS profile_type_id, profiles_type.description AS profile_type_description
+    FROM recruitment.job AS jobs
+    INNER JOIN recruitment.levelofexp AS level_of_exp 
+        ON level_of_exp.id = jobs.levelofexperience_id
+    INNER JOIN recruitment.profiletype AS profiles_type
+        ON jobs.profile_type_id = profiles_type.id
+    WHERE to_tsvector('spanish', jobs.name || ' ' || profiles_type.description || ' ' || level_of_exp.name) 
+        @@ to_tsquery('spanish', %s)
 )
 SELECT 
-    applicant_profile_id,
-    name,
-    skill_description,
-    job_name,
-    level_of_experience,
-    profiletype,
-    aditional_info
-FROM ranked_with_row_number
+    a_p.id AS applicant_profile_id,
+    u.name AS user_name, 
+    job.job_name,
+    job.level_name AS level_of_exp, 
+    job.profile_type_description AS profile_type,
+    ARRAY_AGG(skills.description) AS skills,
+	workexperience.description AS aditional_info
+FROM 
+    recruitment.user AS u
+INNER JOIN 
+    recruitment.applicant_profile AS a_p ON u.user_id = a_p.user_id
+INNER JOIN 
+    recruitment.applicantprofile_skill AS a_p_skill ON a_p_skill.applicant_profile_id = a_p.id
+INNER JOIN 
+    filtered_skills AS skills ON skills.id = a_p_skill.skill_id
+INNER JOIN 
+    recruitment.application AS application ON u.user_id = application.user_id
+INNER JOIN 
+    filtered_job_profile AS job ON job.job_id = application.job_id
+INNER JOIN 
+	recruitment.workexperience AS workexperience on workexperience.applicantprofile_id = a_p.id
+GROUP BY 
+    a_p.id, u.name, job.job_name, job.job_id, job.level_name, job.profile_type_description, workexperience.description; 
+
     """
     resultados = []
     try:
         conn = get_db_connection()  # Obtén la conexión a la base de datos
         with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             # Ejecutar la consulta con el término de búsqueda seguro
-            cur.execute(consulta, (busqueda_capabilities,busqueda_rol))
+            cur.execute(consulta, ((tuple(capabilities),busqueda_rol)))
             resultados = cur.fetchall()
 
         conn.close()
