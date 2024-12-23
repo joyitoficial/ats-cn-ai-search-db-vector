@@ -19,7 +19,7 @@ class PostgresDBAdapter(DBConnectionPort):
     """
     
     def __init__(self, host=None, user=None, password=None, dbname=None, port=None):
-        self.host = host or os.getenv('POSTGRES_HOST')
+        self.host = host or "search_ai_postgres"
         self.user = user or os.getenv('POSTGRES_USER')
         self.password = password or "12345678"
         self.dbname = dbname or os.getenv('POSTGRES_DB')
