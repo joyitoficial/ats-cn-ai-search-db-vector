@@ -24,7 +24,7 @@ class PostgresDBAdapter(DBConnectionPort):
         self.password = password or "12345678"
         self.dbname = dbname or os.getenv('POSTGRES_DB')
         self.port = port or os.getenv('POSTGRES_PORT')
-
+        
         logger.debug(f"Configuración de la base de datos: host={self.host}, dbname={self.dbname}, port={self.port}, user={self.user}")
         
     def get_connection(self):
