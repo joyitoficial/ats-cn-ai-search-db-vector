@@ -6,7 +6,6 @@ WORKDIR /app
 
 RUN pip install flask-cors flask psycopg2
 
-
 COPY ./src ./src
 COPY app.py .
 

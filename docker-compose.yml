@@ -18,4 +18,4 @@ services:
       - search_ai_net
 networks:
   search_ai_net:
-    external: true
+    external: true 
